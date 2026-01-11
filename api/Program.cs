@@ -3,6 +3,7 @@ using api.Data;
 using api.Interfaces;
 using api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -14,13 +15,18 @@ var allowedOrigins = new[]
     "https://decpwa.web.app",
     "https://decpwa.firebaseapp.com"
 };
+var connectionString =
+    Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("Default");
 
 // Add services to the container.
 builder.Services.AddControllers();
+
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    opt.UseNpgsql(connectionString);
 });
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PwaCorsPolicy", policy =>
@@ -31,12 +37,21 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
+
 builder.Services.AddScoped<ITokenService, TokenService>();
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var tokenKey = builder.Configuration["TokenKey"]
-            ?? throw new Exception("Token key not found - Program.cs");
+        // Read token key from environment variable first, fallback to appsettings.json
+        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY") 
+               ?? builder.Configuration["TokenKey"];
+
+        if (string.IsNullOrEmpty(tokenKey))
+            throw new Exception("Token key not found - Program.cs");
+
+        // var tokenKey = builder.Configuration["TokenKey"]
+        //     ?? throw new Exception("Token key not found - Program.cs");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -46,9 +61,22 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto;
+
+    // Trust all proxy networks (required for Railway / Fly / ACA)
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
+
 app.UseCors("PwaCorsPolicy");
 
 app.UseAuthentication();
