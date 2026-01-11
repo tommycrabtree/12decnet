@@ -74,6 +74,22 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 var app = builder.Build();
 
+// Apply migrations
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    try
+    {
+        context.Database.Migrate();
+        Console.WriteLine("Database migrated successfully.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error migrating database: {ex.Message}");
+        throw;
+    }
+}
+
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
 
