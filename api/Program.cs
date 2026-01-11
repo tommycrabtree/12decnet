@@ -6,13 +6,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ----------------------
-// Allowed origins
-// ----------------------
 var allowedOrigins = new[]
 {
     "http://localhost:4200",
@@ -21,40 +17,37 @@ var allowedOrigins = new[]
     "https://decpwa.firebaseapp.com"
 };
 
-// ----------------------
+// Get DATABASE_URL from environment or appsettings
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("Default");
+
+if (string.IsNullOrEmpty(databaseUrl))
+    throw new Exception("DATABASE_URL is not set.");
+
 // Convert Railway DATABASE_URL to Npgsql connection string
-// ----------------------
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
+var databaseUri = new Uri(databaseUrl);
+var userInfo = databaseUri.UserInfo.Split(':');
 
-if (!string.IsNullOrEmpty(connectionString) && connectionString.StartsWith("postgres://"))
+var npgsqlConnString = new Npgsql.NpgsqlConnectionStringBuilder
 {
-    var uri = new Uri(connectionString);
-    var userInfo = uri.UserInfo.Split(':');
+    Host = databaseUri.Host,
+    Port = databaseUri.Port,
+    Username = userInfo[0],
+    Password = userInfo[1],
+    Database = databaseUri.AbsolutePath.TrimStart('/'),
+    SslMode = Npgsql.SslMode.Prefer  // SSL if available
+}.ToString();
 
-    connectionString = new NpgsqlConnectionStringBuilder
-    {
-        Host = uri.Host,
-        Port = uri.Port,
-        Username = userInfo[0],
-        Password = userInfo[1],
-        Database = uri.AbsolutePath.TrimStart('/'),
-        SslMode = SslMode.Require
-    }.ToString();
-}
+// Mask password for safe console logging
+var safeConnString = npgsqlConnString.Replace(userInfo[1], "*****");
+Console.WriteLine($"Using database connection string: {safeConnString}");
 
-if (string.IsNullOrEmpty(connectionString))
-{
-    throw new Exception("DATABASE_URL environment variable is not set or invalid!");
-}
-
-// ----------------------
-// Services
-// ----------------------
+// Add services to the container.
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
-    opt.UseNpgsql(connectionString);
+    opt.UseNpgsql(npgsqlConnString);
 });
 
 builder.Services.AddCors(options =>
@@ -68,13 +61,14 @@ builder.Services.AddCors(options =>
     });
 });
 
+// JWT setup
 builder.Services.AddScoped<ITokenService, TokenService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY")
-                       ?? builder.Configuration["TokenKey"];
+        var tokenKey = (Environment.GetEnvironmentVariable("TOKEN_KEY")
+                        ?? builder.Configuration["TokenKey"])?.Trim();
 
         if (string.IsNullOrEmpty(tokenKey))
             throw new Exception("Token key not found - Program.cs");
@@ -88,22 +82,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+// Forwarded headers (required for Railway/Fly/Azure)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =
         ForwardedHeaders.XForwardedFor |
         ForwardedHeaders.XForwardedProto;
 
-    // Trust all proxy networks (required for Railway / Fly / ACA)
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
 
 var app = builder.Build();
 
-// ----------------------
-// Apply migrations at startup
-// ----------------------
+// Apply migrations
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -119,9 +111,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// ----------------------
-// Middleware pipeline
-// ----------------------
+// Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
 
 app.UseCors("PwaCorsPolicy");
