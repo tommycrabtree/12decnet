@@ -3,10 +3,14 @@ using api.Data;
 using api.Interfaces;
 using api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
+using System.IO;
 
+// Build the app
 var builder = WebApplication.CreateBuilder(args);
 
 var allowedOrigins = new[]
@@ -17,37 +21,45 @@ var allowedOrigins = new[]
     "https://decpwa.firebaseapp.com"
 };
 
-// Get DATABASE_URL from environment or appsettings
-var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL")
-    ?? builder.Configuration.GetConnectionString("Default");
+// Parse Railway DATABASE_URL into Npgsql connection string
+var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
+string connectionString;
 
-if (string.IsNullOrEmpty(databaseUrl))
-    throw new Exception("DATABASE_URL is not set.");
-
-// Convert Railway DATABASE_URL to Npgsql connection string
-var databaseUri = new Uri(databaseUrl);
-var userInfo = databaseUri.UserInfo.Split(':');
-
-var npgsqlConnString = new Npgsql.NpgsqlConnectionStringBuilder
+if (!string.IsNullOrEmpty(databaseUrl))
 {
-    Host = databaseUri.Host,
-    Port = databaseUri.Port,
-    Username = userInfo[0],
-    Password = userInfo[1],
-    Database = databaseUri.AbsolutePath.TrimStart('/'),
-    SslMode = Npgsql.SslMode.Prefer  // SSL if available
-}.ToString();
+    // DATABASE_URL format: postgres://username:password@host:port/dbname
+    var uri = new Uri(databaseUrl);
+    var userInfo = uri.UserInfo.Split(':');
 
-// Mask password for safe console logging
-var safeConnString = npgsqlConnString.Replace(userInfo[1], "*****");
-Console.WriteLine($"Using database connection string: {safeConnString}");
+    var builderNpgsql = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port,
+        Username = userInfo[0],
+        Password = userInfo[1],
+        Database = uri.AbsolutePath.TrimStart('/'),
+        SslMode = SslMode.Prefer
+    };
 
-// Add services to the container.
+    connectionString = builderNpgsql.ConnectionString;
+}
+else
+{
+    // Null-safe fallback
+    connectionString = builder.Configuration.GetConnectionString("Default")
+        ?? throw new Exception("Default connection string not found in configuration.");
+}
+
+// Optional: log which connection string is being used (without password)
+var npgsqlBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+Console.WriteLine($"Using database connection string: Host={npgsqlBuilder.Host};Port={npgsqlBuilder.Port};Username={npgsqlBuilder.Username};Database={npgsqlBuilder.Database};SSL Mode={npgsqlBuilder.SslMode}");
+
+// Add services
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
-    opt.UseNpgsql(npgsqlConnString);
+    opt.UseNpgsql(connectionString);
 });
 
 builder.Services.AddCors(options =>
@@ -61,14 +73,13 @@ builder.Services.AddCors(options =>
     });
 });
 
-// JWT setup
 builder.Services.AddScoped<ITokenService, TokenService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var tokenKey = (Environment.GetEnvironmentVariable("TOKEN_KEY")
-                        ?? builder.Configuration["TokenKey"])?.Trim();
+        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY") 
+                       ?? builder.Configuration["TokenKey"];
 
         if (string.IsNullOrEmpty(tokenKey))
             throw new Exception("Token key not found - Program.cs");
@@ -82,16 +93,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// Forwarded headers (required for Railway/Fly/Azure)
+// Configure forwarded headers for proxies (Railway / ACA / Fly.io)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders =
-        ForwardedHeaders.XForwardedFor |
-        ForwardedHeaders.XForwardedProto;
-
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
+
+// Configure Data Protection to persist keys to Railway volume
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo("/persisted-keys"))
+    .SetApplicationName("talented-contentment");
 
 var app = builder.Build();
 
@@ -111,14 +124,10 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Configure the HTTP request pipeline.
+// Configure middleware
 app.UseForwardedHeaders();
-
 app.UseCors("PwaCorsPolicy");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
 app.Run();
