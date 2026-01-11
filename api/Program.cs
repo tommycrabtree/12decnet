@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+
 var allowedOrigins = new[]
 {
     "http://localhost:4200",
@@ -15,11 +17,35 @@ var allowedOrigins = new[]
     "https://decpwa.web.app",
     "https://decpwa.firebaseapp.com"
 };
-var connectionString =
-    Environment.GetEnvironmentVariable("DATABASE_URL")
+
+// -------------------------------
+// DATABASE CONNECTION
+// -------------------------------
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? builder.Configuration.GetConnectionString("Default");
 
-// Add services to the container.
+// Convert Railway DATABASE_URL (postgres://user:pass@host:port/db) to Npgsql format
+if (!string.IsNullOrEmpty(connectionString) && connectionString.StartsWith("postgres://"))
+{
+    var uri = new Uri(connectionString);
+    var userInfo = uri.UserInfo.Split(':');
+
+    var builderConn = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port,
+        Username = userInfo[0],
+        Password = userInfo[1],
+        Database = uri.AbsolutePath.TrimStart('/'),
+        SslMode = SslMode.Require
+    };
+
+    connectionString = builderConn.ToString();
+}
+
+// -------------------------------
+// SERVICES
+// -------------------------------
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
@@ -50,8 +76,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         if (string.IsNullOrEmpty(tokenKey))
             throw new Exception("Token key not found - Program.cs");
 
-        // var tokenKey = builder.Configuration["TokenKey"]
-        //     ?? throw new Exception("Token key not found - Program.cs");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
@@ -74,7 +98,9 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 var app = builder.Build();
 
-// Apply migrations
+// -------------------------------
+// APPLY MIGRATIONS
+// -------------------------------
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -90,7 +116,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Configure the HTTP request pipeline.
+// -------------------------------
+// MIDDLEWARE
+// -------------------------------
 app.UseForwardedHeaders();
 
 app.UseCors("PwaCorsPolicy");
