@@ -10,6 +10,9 @@ using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ----------------------
+// Allowed origins
+// ----------------------
 var allowedOrigins = new[]
 {
     "http://localhost:4200",
@@ -18,19 +21,17 @@ var allowedOrigins = new[]
     "https://decpwa.firebaseapp.com"
 };
 
-// -------------------------------
-// DATABASE CONNECTION
-// -------------------------------
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
-    ?? builder.Configuration.GetConnectionString("Default");
+// ----------------------
+// Convert Railway DATABASE_URL to Npgsql connection string
+// ----------------------
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-// Convert Railway DATABASE_URL (postgres://user:pass@host:port/db) to Npgsql format
 if (!string.IsNullOrEmpty(connectionString) && connectionString.StartsWith("postgres://"))
 {
     var uri = new Uri(connectionString);
     var userInfo = uri.UserInfo.Split(':');
 
-    var builderConn = new NpgsqlConnectionStringBuilder
+    connectionString = new NpgsqlConnectionStringBuilder
     {
         Host = uri.Host,
         Port = uri.Port,
@@ -38,14 +39,17 @@ if (!string.IsNullOrEmpty(connectionString) && connectionString.StartsWith("post
         Password = userInfo[1],
         Database = uri.AbsolutePath.TrimStart('/'),
         SslMode = SslMode.Require
-    };
-
-    connectionString = builderConn.ToString();
+    }.ToString();
 }
 
-// -------------------------------
-// SERVICES
-// -------------------------------
+if (string.IsNullOrEmpty(connectionString))
+{
+    throw new Exception("DATABASE_URL environment variable is not set or invalid!");
+}
+
+// ----------------------
+// Services
+// ----------------------
 builder.Services.AddControllers();
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
@@ -69,9 +73,8 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // Read token key from environment variable first, fallback to appsettings.json
-        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY") 
-               ?? builder.Configuration["TokenKey"];
+        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY")
+                       ?? builder.Configuration["TokenKey"];
 
         if (string.IsNullOrEmpty(tokenKey))
             throw new Exception("Token key not found - Program.cs");
@@ -98,9 +101,9 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 var app = builder.Build();
 
-// -------------------------------
-// APPLY MIGRATIONS
-// -------------------------------
+// ----------------------
+// Apply migrations at startup
+// ----------------------
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -116,9 +119,9 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// -------------------------------
-// MIDDLEWARE
-// -------------------------------
+// ----------------------
+// Middleware pipeline
+// ----------------------
 app.UseForwardedHeaders();
 
 app.UseCors("PwaCorsPolicy");
