@@ -10,9 +10,9 @@ using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using System.IO;
 
-// Build the app
 var builder = WebApplication.CreateBuilder(args);
 
+// Allowed origins for your PWA + local dev
 var allowedOrigins = new[]
 {
     "http://localhost:4200",
@@ -21,13 +21,12 @@ var allowedOrigins = new[]
     "https://decpwa.firebaseapp.com"
 };
 
-// Parse Railway DATABASE_URL into Npgsql connection string
+// Parse Railway DATABASE_URL
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 string connectionString;
 
 if (!string.IsNullOrEmpty(databaseUrl))
 {
-    // DATABASE_URL format: postgres://username:password@host:port/dbname
     var uri = new Uri(databaseUrl);
     var userInfo = uri.UserInfo.Split(':');
 
@@ -45,23 +44,20 @@ if (!string.IsNullOrEmpty(databaseUrl))
 }
 else
 {
-    // Null-safe fallback
     connectionString = builder.Configuration.GetConnectionString("Default")
-        ?? throw new Exception("Default connection string not found in configuration.");
+        ?? throw new Exception("Default connection string not found.");
 }
 
-// Optional: log which connection string is being used (without password)
+// Log connection string (without password)
 var npgsqlBuilder = new NpgsqlConnectionStringBuilder(connectionString);
-Console.WriteLine($"Using database connection string: Host={npgsqlBuilder.Host};Port={npgsqlBuilder.Port};Username={npgsqlBuilder.Username};Database={npgsqlBuilder.Database};SSL Mode={npgsqlBuilder.SslMode}");
+Console.WriteLine($"Using DB: Host={npgsqlBuilder.Host}; Port={npgsqlBuilder.Port}; User={npgsqlBuilder.Username}; Database={npgsqlBuilder.Database}; SSL={npgsqlBuilder.SslMode}");
 
 // Add services
 builder.Services.AddControllers();
+builder.Services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(connectionString));
+builder.Services.AddScoped<ITokenService, TokenService>();
 
-builder.Services.AddDbContext<AppDbContext>(opt =>
-{
-    opt.UseNpgsql(connectionString);
-});
-
+// CORS policy: allow PWA origins, any header/method, and credentials
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("PwaCorsPolicy", policy =>
@@ -69,12 +65,12 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials(); // important for auth headers
     });
 });
 
-builder.Services.AddScoped<ITokenService, TokenService>();
-
+// JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -82,7 +78,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                        ?? builder.Configuration["TokenKey"];
 
         if (string.IsNullOrEmpty(tokenKey))
-            throw new Exception("Token key not found - Program.cs");
+            throw new Exception("Token key not found");
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -93,7 +89,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// Configure forwarded headers for proxies (Railway / ACA / Fly.io)
+// Forwarded headers for proxies
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -101,7 +97,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// Configure Data Protection to persist keys to Railway volume (guarded)
+// Data Protection keys persisted to Railway volume
 if (Directory.Exists("/persisted-keys"))
 {
     builder.Services.AddDataProtection()
@@ -110,17 +106,15 @@ if (Directory.Exists("/persisted-keys"))
 }
 else
 {
-    Console.WriteLine("Warning: /persisted-keys volume not found. Using ephemeral data protection keys.");
+    Console.WriteLine("Warning: /persisted-keys volume not found. Using ephemeral keys.");
 }
 
-
+// Use PORT environment variable
 var port = Environment.GetEnvironmentVariable("PORT");
-
 if (!string.IsNullOrEmpty(port))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
-
 
 var app = builder.Build();
 
@@ -135,18 +129,33 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Error migrating database: {ex.Message}");
+        Console.WriteLine($"Error migrating DB: {ex.Message}");
         throw;
     }
 }
 
-// Configure middleware
+// Middleware
 app.UseForwardedHeaders();
 app.UseHttpsRedirection();
-// NOTE: CORS must be before auth
 app.UseRouting();
+
+// Handle preflight OPTIONS requests automatically
 app.UseCors("PwaCorsPolicy");
+
+// Optional: catch-all for OPTIONS requests (extra safety)
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == "OPTIONS")
+    {
+        context.Response.StatusCode = 200;
+        await context.Response.CompleteAsync();
+        return;
+    }
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
 app.Run();
