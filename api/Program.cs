@@ -38,7 +38,7 @@ if (!string.IsNullOrEmpty(databaseUrl))
         Username = userInfo[0],
         Password = userInfo[1],
         Database = uri.AbsolutePath.TrimStart('/'),
-        SslMode = SslMode.Prefer
+        SslMode = SslMode.Require
     };
 
     connectionString = builderNpgsql.ConnectionString;
@@ -101,10 +101,26 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// Configure Data Protection to persist keys to Railway volume
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo("/persisted-keys"))
-    .SetApplicationName("talented-contentment");
+// Configure Data Protection to persist keys to Railway volume (guarded)
+if (Directory.Exists("/persisted-keys"))
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo("/persisted-keys"))
+        .SetApplicationName("talented-contentment");
+}
+else
+{
+    Console.WriteLine("Warning: /persisted-keys volume not found. Using ephemeral data protection keys.");
+}
+
+
+var port = Environment.GetEnvironmentVariable("PORT");
+
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
 
 var app = builder.Build();
 
@@ -126,6 +142,9 @@ using (var scope = app.Services.CreateScope())
 
 // Configure middleware
 app.UseForwardedHeaders();
+app.UseHttpsRedirection();
+// NOTE: CORS must be before auth
+app.UseRouting();
 app.UseCors("PwaCorsPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
