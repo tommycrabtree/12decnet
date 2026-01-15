@@ -136,7 +136,7 @@ using (var scope = app.Services.CreateScope())
 
 // Middleware
 app.UseForwardedHeaders();
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseRouting();
 
 // Handle preflight OPTIONS requests automatically
