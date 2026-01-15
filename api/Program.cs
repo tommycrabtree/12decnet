@@ -65,8 +65,8 @@ builder.Services.AddCors(options =>
         policy
             .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials(); // important for auth headers
+            .AllowAnyMethod();
+//          .AllowCredentials(); // important for auth headers
     });
 });
 
@@ -143,16 +143,16 @@ app.UseRouting();
 app.UseCors("PwaCorsPolicy");
 
 // Optional: catch-all for OPTIONS requests (extra safety)
-app.Use(async (context, next) =>
-{
-    if (context.Request.Method == "OPTIONS")
-    {
-        context.Response.StatusCode = 200;
-        await context.Response.CompleteAsync();
-        return;
-    }
-    await next();
-});
+// app.Use(async (context, next) =>
+// {
+//     if (context.Request.Method == "OPTIONS")
+//     {
+//         context.Response.StatusCode = 200;
+//         await context.Response.CompleteAsync();
+//         return;
+//     }
+//     await next();
+// });
 
 app.UseAuthentication();
 app.UseAuthorization();
