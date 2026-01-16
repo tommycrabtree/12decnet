@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using System.IO;
+using api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -135,6 +136,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Middleware
+app.UseMiddleware<ExceptionMiddleware>();
 app.UseForwardedHeaders();
 // app.UseHttpsRedirection();
 app.UseRouting();
