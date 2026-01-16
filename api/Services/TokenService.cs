@@ -7,13 +7,16 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace api.Services;
 
-public class TokenService(IConfiguration config) : ITokenService
+public class TokenService : ITokenService
 {
     public string CreateToken(AppUser user)
     {
-        var tokenKey = config["TokenKey"] ?? throw new Exception("Can't get token key, bud");
+        var tokenKey = Environment.GetEnvironmentVariable("TOKEN_KEY") 
+                       ?? throw new Exception("Can't get token key, bud");
+
         if (tokenKey.Length < 64)
             throw new Exception("Token key needs to be at least 64 characters, boss");
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(tokenKey));
 
         var claims = new List<Claim>
@@ -32,8 +35,6 @@ public class TokenService(IConfiguration config) : ITokenService
         };
 
         var tokenHandler = new JwtSecurityTokenHandler();
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-
-        return tokenHandler.WriteToken(token);
+        return tokenHandler.WriteToken(tokenHandler.CreateToken(tokenDescriptor));
     }
 }
