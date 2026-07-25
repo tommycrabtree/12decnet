@@ -17,6 +17,7 @@ public class ProductsController(AppDbContext context) : BaseApiController
         var product = new Product
         {
             Name = createProductDto.DisplayName,
+            UnitsPerCase = createProductDto.UnitsPerCase,
             ShelfCapacity = createProductDto.ShelfCapacity,
             ShelfDaysAllowed = createProductDto.ShelfDaysAllowed
         };
@@ -40,6 +41,7 @@ public class ProductsController(AppDbContext context) : BaseApiController
             {
                 Id = p.Id,
                 DisplayName = p.Name,
+                UnitsPerCase = p.UnitsPerCase,
                 ShelfCapacity = p.ShelfCapacity,
                 ShelfDaysAllowed = p.ShelfDaysAllowed
             })

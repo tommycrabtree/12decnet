@@ -8,6 +8,9 @@ public class CreateProductDto
     public string DisplayName { get; set; } = "";
 
     [Required]
+    public int UnitsPerCase { get; set; }
+
+    [Required]
     public int ShelfCapacity { get; set; }
 
     [Required]
