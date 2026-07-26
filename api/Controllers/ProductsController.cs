@@ -42,6 +42,7 @@ public class ProductsController(AppDbContext context) : BaseApiController
                 Id = p.Id,
                 DisplayName = p.Name,
                 UnitsPerCase = p.UnitsPerCase,
+                FreezerUnits = p.FreezerUnits,
                 ShelfCapacity = p.ShelfCapacity,
                 ShelfDaysAllowed = p.ShelfDaysAllowed
             })
@@ -61,6 +62,23 @@ public class ProductsController(AppDbContext context) : BaseApiController
         }
 
         return product.ToDto();
+    }
+
+    [HttpPost("{id}/receive-case")] // api/products/product-id/receive-case
+    public async Task<ActionResult<ProductResponseDto>> ReceiveCase(int id)
+    {
+        var product = await context.Products.FindAsync(id);
+
+        if (product == null)
+        {
+            return NotFound("Yellow card for no product");
+        }
+
+        product.FreezerUnits += product.UnitsPerCase;
+
+        await context.SaveChangesAsync();
+
+        return Ok(product.ToDto());
     }
 
     private async Task<bool> ProductExists(string name)
