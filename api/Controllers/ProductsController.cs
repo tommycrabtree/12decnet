@@ -81,6 +81,29 @@ public class ProductsController(AppDbContext context) : BaseApiController
         return Ok(product.ToDto());
     }
 
+    [HttpPost("{id}/subtract-case")] // api/products/product-id/subtract-case
+    public async Task<ActionResult<ProductResponseDto>> SubtractCase(int id)
+    {
+        var product = await context.Products.FindAsync(id);
+
+        if (product == null)
+        {
+            return NotFound("Yellow card for no subtractable product");
+        }
+
+        if (product.FreezerUnits < product.UnitsPerCase)
+        {
+            return BadRequest("Not enough units to subtract an entire case");
+        }
+
+        product.FreezerUnits -= product.UnitsPerCase;
+
+        await context.SaveChangesAsync();
+
+        return Ok(product.ToDto());
+    }
+
+
     private async Task<bool> ProductExists(string name)
     {
         var normalizedName = name.Trim().ToLower();
