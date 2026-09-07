@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using api.Data;
@@ -11,9 +12,11 @@ using api.Data;
 namespace api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816194231_AddDateBatchAndReplenishmentSession")]
+    partial class AddDateBatchAndReplenishmentSession
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -56,23 +59,14 @@ namespace api.Data.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<DateTimeOffset>("CreatedOn")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<int>("DateUnits")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("DonationUnits")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("ExpirationDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("FiftyPercentOffUnits")
                         .HasColumnType("integer");
 
                     b.Property<int>("ProductId")
                         .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("PullFromFreezerDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ReplenishmentSessionId")
                         .HasColumnType("integer");
@@ -128,6 +122,12 @@ namespace api.Data.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
 
                     b.HasKey("Id");
 
