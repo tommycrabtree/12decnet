@@ -8,7 +8,7 @@ public class DateBatchDto
     public int RequestUnits { get; set; }
     public int DateUnits { get; set; }
     public DateTimeOffset CreatedOn { get; set; }
-    public DateTimeOffset ExpirationDate { get; set; }
+    public DateOnly ExpirationDate { get; set; }
     public int? FiftyPercentOffUnits { get; set; }
     public int? DonationUnits { get; set; }
 }

@@ -76,7 +76,7 @@ namespace api.Data.Migrations
                 table: "ReplenishmentSessions",
                 type: "date",
                 nullable: false,
-                defaultValue: new DateOnly(1, 1, 1));
+                defaultValue: new System.DateOnly(1, 1, 1));
         }
     }
 }

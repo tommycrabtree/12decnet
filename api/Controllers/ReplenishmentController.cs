@@ -23,7 +23,7 @@ public class ReplenishmentController(AppDbContext context) : BaseApiController
                 return BadRequest($"Product with id {dateBatchDto.ProductId} was not found");
             }
 
-            var expectedExpirationDate = now.Date.AddDays(product.ShelfDaysAllowed);
+            var expectedExpirationDate = DateOnly.FromDateTime(now.UtcDateTime).AddDays(product.ShelfDaysAllowed);
 
             var dateBatch = new DateBatch
             {
